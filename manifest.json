@@ -1,0 +1,67 @@
+{
+  "dxt_version": "0.1",
+  "name": "beeminder",
+  "display_name": "Beeminder",
+  "version": "0.1.0",
+  "description": "Access to the user's Beeminder goals",
+  "long_description": "Beeminder is a goal-tracking service that uses financial incentives to help users stay committed to their objectives. Users can set goals for anything that can be measured, such as weight, exercise frequency, or time spent on specific activities. Beeminder integrates with many services for automatic data entry. https://www.beeminder.com/",
+  "author": {
+    "name": "Philip Hellyer",
+    "email": "philip@beeminder.com",
+    "url": "https://github.com/pjjh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pjjh/beeminder-mcpb"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js",
+        "--verbose=${user_config.verbose_logging}"
+      ],
+      "env": {
+        "AUTH_TOKEN": "${user_config.auth_token}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "record_progress",
+      "description": "Add a Datapoint to a beeminder goal and receive updated goal status"
+    }
+  ],
+  "keywords": [
+    "beeminder",
+    "commitment-contracts",
+    "goals"
+  ],
+  "license": "MIT",
+  "user_config": {
+    "auth_token": {
+      "type": "string",
+      "title": "Authentication Token",
+      "description": "From https://www.beeminder.com/api/v1/auth_token.json",
+      "sensitive": true,
+      "required": true
+    },
+    "verbose_logging": {
+      "type": "boolean",
+      "title": "Verbose Logging",
+      "description": "Enable detailed logging output",
+      "default": false,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=16.0.0"
+    }
+  }
+}

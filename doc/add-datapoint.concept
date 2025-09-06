@@ -1,0 +1,35 @@
+concept AddDatapoint [U]
+purpose
+	to record progress against a Beeminder goal and confirm the impact on the user's commitment status
+
+state
+	NONE - all state is held by Beeminder.com
+
+actions
+	recordProgress [ user: U ; goal_slug: string ; value: number ; comment: string ]
+		=> [ datapoint_id: number ; safe_days: number ; urgency_level: number ; due_by: date ]
+		add a datapoint to user's goal_slug with value and optional comment
+		pause for processing time
+		fetch current goal status
+		return new datapoint ID and current goal status
+
+
+	recordProgress [ user: U ; goal_slug: string ; value: number ; comment: string ]
+		=> [ guidance: string]
+		if goal_slug does not exist
+		return error guidance to list the user's goal to identify the correct goal_slug
+
+	recordProgress [ user: U ; goal_slug: string ; value: number ; comment: string ]
+		=> [ guidance: string]
+		if user authentication or identification error
+		return error guidance to register the user
+
+operational principle
+	after: recordProgress [ user: U ; goal_slug: string ; value: number ; comment: string ]
+		=> [ datapoint_id: number ; safe_days: number ; urgency_level: number ; due_by: date ]
+
+		then the user knows things like:
+		- Their data (1 unit) was successfully recorded for today
+		- They have 3 days of safety buffer remaining  
+		- Their goal is in "green" status (safe)
+		- The system has processed their progress and updated their commitment

@@ -1,0 +1,45 @@
+concept Password [U]
+purpose
+	to securely store and validate user credentials
+
+state
+	password: U => string
+	salt: U => string
+
+actions
+	set [ user: U ; password: string ]
+		=> [ user: U ]
+		generate a random salt for the user
+		compute a hash of the password with the salt
+		store the hash as password and salt in salt
+		return the user reference
+
+	set [ user: U ; password: string ]
+		=> [ error: string]
+		if password does not meet requirements
+		return the error description
+
+	check [ user: U ; password: string ]
+		=> [ valid: boolean ]
+		retrieve salt for user
+		compute hash of provided password with salt
+		compare with stored hash
+		return true if hashes match, false otherwise
+
+	check [ user: U ; password: string ]
+		=> [ error: string ]
+		if user does not exist or has no password
+		return the error description
+
+	validate [ password: string ]
+		=> [ valid: boolean ]
+		check that the password meets requirements
+		return true if valid, false otherwise
+
+operational principle
+	after set [ user: x ; password: "secret" ]
+	=> [ user: x ]
+	then check [ user: x ; password: "secret" ]
+	=> [ valid: true ]
+	and check [ user: x ; password: "wrong" ]
+	=> [ valid: false ]
