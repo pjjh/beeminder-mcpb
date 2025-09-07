@@ -157,14 +157,27 @@ async function create_and_check_datapoint( goal_slug, value, comment = "", times
         timestamp: timestamp,
       };
 
-      console.error("BMNDR About to create datapoint...");
+      console.error("BMNDR: Creating Datapoint");
+//      const last_losedate = (await bm.getGoal(goal_slug)).losedate;
       const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
 
       // Wait for Beeminder server to process the datapoint
-      // TODO for 1-5, await getUser() until last_modified > timestamp
-      await setTimeout(1000);
-      console.error("BMNDR Hopefully waited...");
+      // getUser().updated_at changes before the goal has actually recalculated itself, so we can't use that
+      // getGoal().last_datapoint also changes before the due date recalculations
+      // so we'll do a heavy poll waiting to see whether there's been an impact on the goal's losedate
+      // which of course there might not be, for intraday incremental progress
+ /*     for ( let i = 0; i < 5; i++ ) {
+        await setTimeout(1000);
+        let losedate = (await bm.getGoal(goal_slug)).losedate;
+        if ( last_losedate !== losedate ) {
+          console.error(`BMNDR: Waited ${i+1} second${ i ? 's' : ''}`);
+          break;
+        }
+      }
+  */
 
+      // hardcode waiting a few seconds for processing; no guarantee that the data's not stale
+      await setTimeout(3000);
       const goalStatus = await bm.getGoal(goal_slug);
 
       const safeDays = Math.floor((goalStatus.losedate - timestamp) / seconds_per_day ); // TODO account for autoratchet
@@ -218,4 +231,4 @@ function now_timestamp() {
 const transport = new StdioServerTransport();
 server.connect(transport);
 
-console.error("Hello World MCP server running...");
+console.error("BMNDR: Beeminder MCP server running...");
