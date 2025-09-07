@@ -23,6 +23,26 @@ const server = new Server(
   },
 );
 
+function bmndr() {
+    const authToken = process.env.AUTH_TOKEN;
+    if (!authToken) {
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token.",
+                },
+            ],
+        };
+    }
+    const bmndr = beeminder(authToken);
+    bmndr.getUser(); // check auth
+    return bmndr;
+    //return beeminder(authToken);
+}
+
+
+
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async (request) => {
   return {
@@ -73,17 +93,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     try {
-      const bm = beeminder(authToken);
+      const bm = bmndr(); // beeminder(authToken);
       
       const datapointParams = {
         value: value,
         comment: comment,
       };
 
-      const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
+        console.error("About to create datapoint...");
+        const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
 
       // Wait for Beeminder server to process the datapoint
-      await setTimeout(500);
+      await setTimeout(1000);
+        console.error("Hopefully waited...");
 
       const goalStatus = await bm.getGoal(goal_slug);
 
@@ -133,6 +155,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   throw new Error(`Unknown tool: ${request.params.name}`);
 });
+
+
+/* underlying calls for record_progress and record_progress_for_yesterday */
+function create_and_check_datapoint() {
+ return "";
+}
 
 // Start the server
 const transport = new StdioServerTransport();
