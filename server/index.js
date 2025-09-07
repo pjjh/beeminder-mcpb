@@ -24,8 +24,8 @@ const server = new Server(
 );
 
 
-/* Lazy Singleton: Create one beeminder object per server instance.
- * Must call bmndr() as await bmndr(), e.g.
+/* Lazy Singleton: Create one validated beeminder object per server instance.
+ * Must await the call to bmndr():
  * const bm = await bmndr();
  */
 let _bmndr = null;
@@ -42,13 +42,12 @@ async function bmndr() {
       content: [
         {
           type: "text",
-          text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token.",
+          text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token in settings.",
         },
       ],
     };
   }
   try {
-    //const bmndr = beeminder(authToken);
     _bmndr = beeminder(authToken);
     await _bmndr.getUser(); // check auth
     return _bmndr;
@@ -101,6 +100,29 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
           required: ["goal_slug", "value"],
         },
       },
+      {
+        name: "record_progress_for_yesterday",
+        description: "Add a datapoint to a Beeminder goal on yesterday's date and receive updated goal status",
+        inputSchema: {
+          type: "object",
+          properties: {
+            goal_slug: {
+              type: "string",
+              description: "The goal slug identifier for the Beeminder goal",
+            },
+            value: {
+              type: "number",
+              description: "The numeric value to record as progress",
+            },
+            comment: {
+              type: "string",
+              description: "Optional comment to add to the datapoint",
+              default: "",
+            },
+          },
+          required: ["goal_slug", "value"],
+        },
+      },
     ],
   };
 });
@@ -110,6 +132,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "record_progress") {
     const { goal_slug, value, comment = "" } = request.params.arguments;
+    return await create_and_check_datapoint( goal_slug, value, comment, now_timestamp() );
+  }
+  else if (request.params.name === "record_progress_for_yesterday") {
+    const { goal_slug, value, comment = "" } = request.params.arguments;
+    return await create_and_check_datapoint( goal_slug, value, comment, now_timestamp() - seconds_per_day );
+  }
+
+  throw new Error(`Unknown tool: ${request.params.name}`);
+});
+
+
+// TOOL IMPLEMENTATIONS
+
+/* underlying calls for record_progress and record_progress_for_yesterday */
+async function create_and_check_datapoint( goal_slug, value, comment = "", timestamp = now_timestamp() ) {
 
     try {
       const bm = await bmndr(); // beeminder(authToken);
@@ -117,20 +154,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const datapointParams = {
         value: value,
         comment: comment,
+        timestamp: timestamp,
       };
 
-      console.error("About to create datapoint...");
+      console.error("BMNDR About to create datapoint...");
       const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
 
       // Wait for Beeminder server to process the datapoint
+      // TODO for 1-5, await getUser() until last_modified > timestamp
       await setTimeout(1000);
-      console.error("Hopefully waited...");
+      console.error("BMNDR Hopefully waited...");
 
       const goalStatus = await bm.getGoal(goal_slug);
 
-      const safeDays = Math.floor((goalStatus.losedate - Date.now() / 1000) / (24 * 60 * 60));
-      const urgencyLevel = goalStatus.yaw > 0 ? 1 : (safeDays <= 1 ? 3 : (safeDays <= 7 ? 2 : 1));
-      const dueBy = new Date(goalStatus.losedate * 1000).toISOString();
+      const safeDays = Math.floor((goalStatus.losedate - timestamp) / seconds_per_day ); // TODO account for autoratchet
+      const urgencyLevel = goalStatus.yaw > 0 ? 1 : (safeDays <= 1 ? 3 : (safeDays <= 7 ? 2 : 1)); // FIXME
+      const dueBy = new Date(goalStatus.losedate * 1000).toISOString(); // TODO account for autoratchet
 
       return {
         content: [
@@ -150,15 +189,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             },
           ],
         };
-      } else if (error.status === 401 || error.status === 422) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error: Authentication failed. Please check your configuration contains a valid Beeminder Auth Token.`,
-            },
-          ],
-        };
       } else {
         return {
           content: [
@@ -170,16 +200,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
     }
-  }
-
-  throw new Error(`Unknown tool: ${request.params.name}`);
-});
-
-
-/* underlying calls for record_progress and record_progress_for_yesterday */
-function create_and_check_datapoint() {
-  return "";
 }
+
+
+// UTILITIES
+
+const seconds_per_day = 24*60*60;
+
+// JS works in milliseconds, Unix in seconds
+function now_timestamp() {
+  const ms = Date.now();
+  return ( Math.floor( ms / 1000 ) );
+}
+
 
 // Start the server
 const transport = new StdioServerTransport();
