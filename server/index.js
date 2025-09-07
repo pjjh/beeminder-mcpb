@@ -182,18 +182,23 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
 
       // Cap safe days with autoratchet if it's set
       let safeDays = Math.floor((goalStatus.losedate - timestamp) / SECONDS_PER_DAY);
+      let loseDate = goalStatus.losedate;
       if (typeof goalStatus.autoratchet === 'number' && goalStatus.autoratchet >= 0) {
+        if (safeDays > goalStatus.autoratchet) {
+          const daysToSubtract = safeDays - goalStatus.autoratchet;
+          loseDate = goalStatus.losedate - (daysToSubtract * SECONDS_PER_DAY);
+        }
         safeDays = Math.min(safeDays, goalStatus.autoratchet);
       }
-      const dueBy = new Date(goalStatus.losedate * 1000).toISOString();
+      const dueBy = new Date(loseDate * 1000).toISOString();
 
-      const urgencyLevel = (safeDays <= 1 ? 3 : (safeDays <= 7 ? 2 : 1)); // FIXME - instead of 1 2 3, let's go with today, tomorrow, this_week, later
+      const urgencyHorizon = getUrgencyHorizon( loseDate );
 
       return {
         content: [
           {
             type: "text",
-            text: `Progress recorded successfully!\n\nDatapoint ID: ${datapointResult.id}\nValue recorded: ${value}${comment ? `\nComment: ${comment}` : ""}\n\nGoal Status:\n- Safe days: ${safeDays}\n- Urgency level: ${urgencyLevel} (1=green, 2=blue, 3=orange/red)\n- Due by: ${dueBy}\n- Goal rate: ${goalStatus.rate} ${goalStatus.runits} per ${goalStatus.gunits}`,
+            text: `Progress recorded successfully!\n\nDatapoint ID: ${datapointResult.id}\nValue recorded: ${value}${comment ? `\nComment: ${comment}` : ""}\n\nGoal Status:\n- Safe days: ${safeDays}\n- Urgency horizon: ${urgencyHorizon}\n- Due by: ${dueBy}\n- Goal rate: ${goalStatus.rate} ${goalStatus.runits} per ${goalStatus.gunits}`,
           },
         ],
       };
@@ -230,6 +235,76 @@ function NOW() {
   const ms = Date.now();
   return ( Math.floor( ms / 1000 ) );
 }
+
+// return Unix timestamp of tomorrow morning
+// will be off during DST changes, but that shouldn't affect usage here
+function MORNING() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0); // Sets the time to midnight (00:00:00.000)
+  const midnightTimestamp = now.getTime(); // Gets the timestamp in milliseconds
+  return Math.floor( midnightTimestamp / 1000 + SECONDS_PER_DAY + getDayStart() );
+}
+
+// return seconds past midnight for DAY_START
+const _dayStartDefault = 7 * 3600; // default 7am
+let _dayStartSeconds = _dayStartDefault;
+let _dayStartString = null;
+function getDayStart() {
+  const timeStr = process.env.DAY_START;
+  if (!timeStr) return _dayStartDefault;
+
+  if ( _dayStartString !== timeStr ) {
+    const match = timeStr.match(/^\s*(\d{1,2})(:(\d{2}))?\s*(am|pm)?\s*$/i);
+    if (!match) {
+      console.error(`BMNDR: Unable to parse DAY_START "${timeStr}"...`);
+      _dayStartString = timeStr;
+      _dayStartSeconds = _dayStartDefault;
+      return _dayStartSeconds;
+    }
+
+    let [, hours, , minutes, ampm] = match; // skip full match and the colon
+    hours = parseInt(hours);
+    minutes = minutes ? parseInt(minutes) : 0;
+
+    if (ampm) {
+      if (ampm.toLowerCase() === 'pm' && hours !== 12) hours += 12;
+      if (ampm.toLowerCase() === 'am' && hours === 12) hours = 0;
+    }
+
+    _dayStartString = timeStr;
+    _dayStartSeconds = hours * 3600 + minutes * 60;
+  }
+  return _dayStartSeconds;
+}
+
+// return a string describing how urgent it is to make progress on this
+function getUrgencyHorizon( losedate = NOW() ) {
+
+      // how urgent
+      if ( losedate <= MORNING() ) {
+        // before bed today
+        return "today";
+      } 
+      else if ( losedate <= MORNING() + SECONDS_PER_DAY ) {
+        // before bed tomorrow
+        return "tomorrow";
+      } 
+      else {
+        // within akh or calendial or safesafesafe
+        const secondsLeft = losedate - NOW();
+        const daysLeft = Math.floor( secondsLeft / SECONDS_PER_DAY );
+        if ( daysLeft <= 8 ) {
+          return "this week"
+        }
+        else if ( daysLeft <= 16 ) {
+          return "next week"
+        }
+        else {
+          return "safe"
+        }
+      }
+}
+
 
 
 // Start the server

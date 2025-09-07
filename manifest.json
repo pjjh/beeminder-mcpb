@@ -21,11 +21,11 @@
     "mcp_config": {
       "command": "node",
       "args": [
-        "${__dirname}/server/index.js",
-        "--verbose=${user_config.verbose_logging}"
+        "${__dirname}/server/index.js"
       ],
       "env": {
-        "AUTH_TOKEN": "${user_config.auth_token}"
+        "AUTH_TOKEN": "${user_config.auth_token}",
+        "DAY_START": "${user_config.day_start}"
       }
     }
   },
@@ -53,12 +53,12 @@
       "sensitive": true,
       "required": true
     },
-    "verbose_logging": {
-      "type": "boolean",
-      "title": "Verbose Logging",
-      "description": "Enable detailed logging output",
-      "default": false,
-      "required": false
+    "day_start": {
+      "type": "string",
+      "title": "Start of Day",
+      "description": "Time of day you normally are up by, to identify beemergencies due before bedtime.",
+      "default": "07:00",
+      "required": true
     }
   },
   "compatibility": {
