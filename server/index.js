@@ -23,22 +23,53 @@ const server = new Server(
   },
 );
 
-function bmndr() {
-    const authToken = process.env.AUTH_TOKEN;
-    if (!authToken) {
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token.",
-                },
-            ],
-        };
+
+/* Lazy Singleton: Create one beeminder object per server instance.
+ * Must call bmndr() as await bmndr(), e.g.
+ * const bm = await bmndr();
+ */
+let _bmndr = null;
+async function bmndr() {
+
+  // lazy loading
+  if ( _bmndr !== null ) {
+    return _bmndr;
+  }
+
+  const authToken = process.env.AUTH_TOKEN;
+  if (!authToken) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token.",
+        },
+      ],
+    };
+  }
+  try {
+    //const bmndr = beeminder(authToken);
+    _bmndr = beeminder(authToken);
+    await _bmndr.getUser(); // check auth
+    return _bmndr;
+  } catch (error) {
+    _bmndr = null; // unassign
+    if (error.status === 401 || error.status === 422) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: Authentication failed. Please check your configuration contains a valid Beeminder Auth Token.`,
+          },
+        ],
+      };
     }
-    const bmndr = beeminder(authToken);
-    bmndr.getUser(); // check auth
-    return bmndr;
-    //return beeminder(authToken);
+    else {
+      throw error;
+    }
+  }
+
+  throw new Error( "Error: 'Unknown error occurred while connecting to Beeminder'" );
 }
 
 
@@ -80,32 +111,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === "record_progress") {
     const { goal_slug, value, comment = "" } = request.params.arguments;
 
-    const authToken = process.env.AUTH_TOKEN;
-    if (!authToken) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Error: AUTH_TOKEN environment variable not set. Please configure your Beeminder authentication token.",
-          },
-        ],
-      };
-    }
-
     try {
-      const bm = bmndr(); // beeminder(authToken);
-      
+      const bm = await bmndr(); // beeminder(authToken);
+
       const datapointParams = {
         value: value,
         comment: comment,
       };
 
-        console.error("About to create datapoint...");
-        const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
+      console.error("About to create datapoint...");
+      const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
 
       // Wait for Beeminder server to process the datapoint
       await setTimeout(1000);
-        console.error("Hopefully waited...");
+      console.error("Hopefully waited...");
 
       const goalStatus = await bm.getGoal(goal_slug);
 
@@ -159,7 +178,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 /* underlying calls for record_progress and record_progress_for_yesterday */
 function create_and_check_datapoint() {
- return "";
+  return "";
 }
 
 // Start the server
