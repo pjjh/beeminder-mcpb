@@ -132,11 +132,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (request.params.name === "record_progress") {
     const { goal_slug, value, comment = "" } = request.params.arguments;
-    return await create_and_check_datapoint( goal_slug, value, comment, now_timestamp() );
+    return await createAndCheckDatapoint( goal_slug, value, comment, NOW() );
   }
   else if (request.params.name === "record_progress_for_yesterday") {
     const { goal_slug, value, comment = "" } = request.params.arguments;
-    return await create_and_check_datapoint( goal_slug, value, comment, now_timestamp() - seconds_per_day );
+    return await createAndCheckDatapoint( goal_slug, value, comment, NOW() - SECONDS_PER_DAY );
   }
 
   throw new Error(`Unknown tool: ${request.params.name}`);
@@ -146,10 +146,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // TOOL IMPLEMENTATIONS
 
 /* underlying calls for record_progress and record_progress_for_yesterday */
-async function create_and_check_datapoint( goal_slug, value, comment = "", timestamp = now_timestamp() ) {
+async function createAndCheckDatapoint( goal_slug, value, comment = "", timestamp = NOW() ) {
 
     try {
-      const bm = await bmndr(); // beeminder(authToken);
+      const bm = await bmndr(); 
 
       const datapointParams = {
         value: value,
@@ -180,9 +180,14 @@ async function create_and_check_datapoint( goal_slug, value, comment = "", times
       await setTimeout(3000);
       const goalStatus = await bm.getGoal(goal_slug);
 
-      const safeDays = Math.floor((goalStatus.losedate - timestamp) / seconds_per_day ); // TODO account for autoratchet
-      const urgencyLevel = goalStatus.yaw > 0 ? 1 : (safeDays <= 1 ? 3 : (safeDays <= 7 ? 2 : 1)); // FIXME
-      const dueBy = new Date(goalStatus.losedate * 1000).toISOString(); // TODO account for autoratchet
+      // Cap safe days with autoratchet if it's set
+      let safeDays = Math.floor((goalStatus.losedate - timestamp) / SECONDS_PER_DAY);
+      if (typeof goalStatus.autoratchet === 'number' && goalStatus.autoratchet >= 0) {
+        safeDays = Math.min(safeDays, goalStatus.autoratchet);
+      }
+      const dueBy = new Date(goalStatus.losedate * 1000).toISOString();
+
+      const urgencyLevel = (safeDays <= 1 ? 3 : (safeDays <= 7 ? 2 : 1)); // FIXME - instead of 1 2 3, let's go with today, tomorrow, this_week, later
 
       return {
         content: [
@@ -218,10 +223,10 @@ async function create_and_check_datapoint( goal_slug, value, comment = "", times
 
 // UTILITIES
 
-const seconds_per_day = 24*60*60;
+const SECONDS_PER_DAY = 24*60*60;
 
 // JS works in milliseconds, Unix in seconds
-function now_timestamp() {
+function NOW() {
   const ms = Date.now();
   return ( Math.floor( ms / 1000 ) );
 }
