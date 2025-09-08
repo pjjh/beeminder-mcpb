@@ -177,20 +177,10 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
   */
 
       // hardcode waiting a few seconds for processing; no guarantee that the data's not stale
-      await setTimeout(3000);
+      await setTimeout(5000);
       const goalStatus = await bm.getGoal(goal_slug);
 
-      // Cap safe days with autoratchet if it's set
-      let safeDays = Math.floor((goalStatus.losedate - timestamp) / SECONDS_PER_DAY);
-      let loseDate = goalStatus.losedate;
-      if (typeof goalStatus.autoratchet === 'number' && goalStatus.autoratchet >= 0) {
-        if (safeDays > goalStatus.autoratchet) {
-          const daysToSubtract = safeDays - goalStatus.autoratchet;
-          loseDate = goalStatus.losedate - (daysToSubtract * SECONDS_PER_DAY);
-        }
-        safeDays = Math.min(safeDays, goalStatus.autoratchet);
-      }
-      const dueBy = new Date(loseDate * 1000).toISOString();
+      const { safeDays, loseDate, dueBy } = adjustForAutoratchet( goalStatus );
 
       const urgencyHorizon = getUrgencyHorizon( loseDate );
 
@@ -276,6 +266,29 @@ function getDayStart() {
   }
   return _dayStartSeconds;
 }
+
+
+// return { safeDays, loseDate, dueBy }, adjusted for autoratchet if applicable
+function adjustForAutoratchet( goalStatus ) {
+
+      let safeDays = goalStatus.safebuf; 
+      let loseDate = goalStatus.losedate;
+
+      // autoratchet kicks in at day end so won't yet be reflected in safebuf
+      if (typeof goalStatus.autoratchet === 'number' && goalStatus.autoratchet >= 0) {
+        const autoratchet = goalStatus.autoratchet + 1; // +1 to include today
+        if (safeDays > autoratchet) {
+          const daysToSubtract = safeDays - (autoratchet); 
+          loseDate = goalStatus.losedate - (daysToSubtract * SECONDS_PER_DAY);
+        }
+        safeDays = Math.min(safeDays, autoratchet);
+      }
+
+      const dueBy = new Date(loseDate * 1000).toISOString();
+
+  return { safeDays, loseDate, dueBy };
+}
+
 
 // return a string describing how urgent it is to make progress on this
 function getUrgencyHorizon( losedate = NOW() ) {
