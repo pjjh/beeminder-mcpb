@@ -158,27 +158,19 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
       };
 
       console.error("BMNDR: Creating Datapoint");
-//      const last_losedate = (await bm.getGoal(goal_slug)).losedate;
       const datapointResult = await bm.createDatapoint(goal_slug, datapointParams);
 
       // Wait for Beeminder server to process the datapoint
       // getUser().updated_at changes before the goal has actually recalculated itself, so we can't use that
-      // getGoal().last_datapoint also changes before the due date recalculations
-      // so we'll do a heavy poll waiting to see whether there's been an impact on the goal's losedate
-      // which of course there might not be, for intraday incremental progress
- /*     for ( let i = 0; i < 5; i++ ) {
-        await setTimeout(1000);
-        let losedate = (await bm.getGoal(goal_slug)).losedate;
-        if ( last_losedate !== losedate ) {
-          console.error(`BMNDR: Waited ${i+1} second${ i ? 's' : ''}`);
-          break;
-        }
+      // so we'll do a relatively heavy poll waiting for the graph to finish processing
+      let queued = true;
+      let goalStatus = undefined;
+      while (queued) {
+        await setTimeout(2000);
+        goalStatus = await bm.callApi(`/users/me/goals/${goal_slug}.json`, { emaciated: true }, 'GET');
+        queued = goalStatus.queued;
       }
-  */
-
-      // hardcode waiting a few seconds for processing; no guarantee that the data's not stale
-      await setTimeout(5000);
-      const goalStatus = await bm.getGoal(goal_slug);
+      console.error("BMNDR: No longer queued");
 
       const { safeDays, loseDate, dueBy } = adjustForAutoratchet( goalStatus );
 
