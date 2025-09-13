@@ -132,6 +132,15 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
           required: [],
         },
       },
+      {
+        name: "beemergencies",
+        description: "Get goals that need attention before bed today or tomorrow",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
     ],
   };
 });
@@ -149,6 +158,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   else if (request.params.name === "list_goals") {
     return await listGoals();
+  }
+  else if (request.params.name === "beemergencies") {
+    return await beemergencies();
   }
 
   throw new Error(`Unknown tool: ${request.params.name}`);
@@ -197,7 +209,7 @@ async function listGoals() {
       }
       
       const urgencyHorizon = getUrgencyHorizon(loseDate);
-      const dueBy = new Date(loseDate * 1000).toISOString();
+      const dueBy = formatDueDate(loseDate);
       
       return {
         slug: goal.slug,
@@ -215,18 +227,14 @@ async function listGoals() {
     // Sort by urgencykey after potential adjustments
     goalsWithStatus.sort((a, b) => a.urgencykey.localeCompare(b.urgencykey));
     
-    const goalsList = goalsWithStatus.map(goal => 
-      `**${goal.slug}** (${goal.urgency_horizon})\n` +
-      `  ${goal.title}\n` +
-      `  Safe days: ${goal.safe_days} | Due: ${goal.due_by}\n` +
-      `  Rate: ${goal.rate} | Current: ${goal.current_value} → ${goal.target_value}`
-    ).join('\n\n');
-    
     return {
       content: [
         {
           type: "text",
-          text: `Found ${goalsWithStatus.length} goals (sorted by urgency):\n\n${goalsList}`,
+          text: JSON.stringify({
+            count: goalsWithStatus.length,
+            goals: goalsWithStatus
+          }, null, 2),
         },
       ],
     };
@@ -236,6 +244,39 @@ async function listGoals() {
         {
           type: "text",
           text: `Error: ${error.message || error.name || 'Unknown error occurred while fetching goals'}`,
+        },
+      ],
+    };
+  }
+}
+
+async function beemergencies() {
+  try {
+    // Call listGoals and filter for urgent goals
+    const listResult = await listGoals();
+    const allGoalsData = JSON.parse(listResult.content[0].text);
+    
+    const urgentGoals = allGoalsData.goals.filter(goal => 
+      goal.urgency_horizon === 'today' || goal.urgency_horizon === 'tomorrow'
+    );
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            count: urgentGoals.length,
+            goals: urgentGoals
+          }, null, 2),
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error: ${error.message || error.name || 'Unknown error occurred while fetching beemergencies'}`,
         },
       ],
     };
@@ -309,6 +350,18 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
 
 const SECONDS_PER_DAY = 24*60*60;
 
+// Format Unix timestamp as user-friendly local time
+function formatDueDate(losedate) {
+  return new Date(losedate * 1000).toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short', 
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short'
+  });
+}
+
 // JS works in milliseconds, Unix in seconds
 function NOW() {
   const ms = Date.now();
@@ -373,7 +426,7 @@ function adjustForAutoratchet( goalStatus ) {
         safeDays = Math.min(safeDays, autoratchet);
       }
 
-      const dueBy = new Date(loseDate * 1000).toISOString();
+      const dueBy = formatDueDate(loseDate);
 
   return { safeDays, loseDate, dueBy };
 }

@@ -41,6 +41,10 @@
     {
       "name": "list_goals",
       "description": "Get a complete list of the user's Beeminder goals with current status for effort prioritization"
+    },
+    {
+      "name": "beemergencies",
+      "description": "Get goals that need attention before bed today or tomorrow"
     }
   ],
   "keywords": [
