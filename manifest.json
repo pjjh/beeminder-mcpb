@@ -37,6 +37,10 @@
     {
         "name": "record_progress_for_yesterday",
         "description": "Add a datapoint to a Beeminder goal on yesterday's date and receive updated goal status"
+    },
+    {
+      "name": "list_goals",
+      "description": "Get a complete list of the user's Beeminder goals with current status for effort prioritization"
     }
   ],
   "keywords": [

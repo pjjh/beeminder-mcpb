@@ -1,0 +1,32 @@
+concept Dashboard [U]
+purpose
+	to get collective information about the user's goals, to help with effort prioritisation
+
+state
+	NONE - all state is held by Beeminder.com
+
+actions
+	listGoals [ user: U ]
+		=> [ goals ]
+		returns a complete list of the user's goals
+
+	beemergencies [ user: U ]
+		=> [ goals ]
+		returns a list of the user's goals that need to be completed before bed today
+
+	calendial [ user: U ]
+		=> [ goals ]
+		returns a list of the user's goals that will need attention between 8 and 15 days from now
+
+
+operational principle
+	after: ALL [ user: U ]
+		=> [ goals ]
+
+		for each goal:
+		- whether it needs to be completed before bed today 
+		- whether it's in the red (a superset of the above)
+		- losedate and number of safe days, adjusted for upcoming autoratchet
+		- fineprint, which may contain context and guidance from the user
+
+

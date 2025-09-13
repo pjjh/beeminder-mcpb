@@ -24,6 +24,10 @@ actions
 		if user authentication or identification error
 		return error guidance to register the user
 
+	recordProgressForYesterday [ user: U ; goal_slug: string ; value: number ; comment: string ]
+		=> [ datapoint_id: number ; safe_days: number ; urgency_level: number ; due_by: date ]
+		as with recordProgress, but the datapoint is entered for 24h before 'now'
+
 operational principle
 	after: recordProgress [ user: U ; goal_slug: string ; value: number ; comment: string ]
 		=> [ datapoint_id: number ; safe_days: number ; urgency_level: number ; due_by: date ]

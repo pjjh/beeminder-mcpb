@@ -123,6 +123,15 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
           required: ["goal_slug", "value"],
         },
       },
+      {
+        name: "list_goals",
+        description: "Get a complete list of the user's Beeminder goals with current status for effort prioritization",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
     ],
   };
 });
@@ -138,12 +147,91 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { goal_slug, value, comment = "" } = request.params.arguments;
     return await createAndCheckDatapoint( goal_slug, value, comment, NOW() - SECONDS_PER_DAY );
   }
+  else if (request.params.name === "list_goals") {
+    return await listGoals();
+  }
 
   throw new Error(`Unknown tool: ${request.params.name}`);
 });
 
 
 // TOOL IMPLEMENTATIONS
+
+async function listGoals() {
+  try {
+    const bm = await bmndr();
+    
+    const user = await bm.getUserSkinny();
+    const goals = user.goals || [];
+    
+    // Sort by urgencykey (canonical sort from API)
+    goals.sort((a, b) => a.urgencykey - b.urgencykey);
+    
+    const goalsWithStatus = await Promise.all(goals.map(async (goal) => {
+      let safeDays = goal.safebuf;
+      let loseDate = goal.losedate;
+      
+      // If latest datapoint was added today, autoratchet hasn't run yet
+      // so we need to manually adjust safe days and losedate
+      if (goal.last_datapoint && goal.last_datapoint.timestamp) {
+        const lastDatapointAge = NOW() - goal.last_datapoint.timestamp;
+        const isFromToday = lastDatapointAge < SECONDS_PER_DAY;
+        
+        if (isFromToday) {
+          try {
+            // Fetch full goal data to get autoratchet value
+            const fullGoal = await bm.getGoal(goal.slug);
+            const adjusted = adjustForAutoratchet(fullGoal);
+            safeDays = adjusted.safeDays;
+            loseDate = adjusted.loseDate;
+          } catch (error) {
+            // If fetch fails, use unadjusted values
+            console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
+          }
+        }
+      }
+      
+      const urgencyHorizon = getUrgencyHorizon(loseDate);
+      const dueBy = new Date(loseDate * 1000).toISOString();
+      
+      return {
+        slug: goal.slug,
+        title: goal.title,
+        urgency_horizon: urgencyHorizon,
+        safe_days: safeDays,
+        due_by: dueBy,
+        rate: `${goal.rate} ${goal.runits} per ${goal.gunits}`,
+        current_value: goal.curval,
+        target_value: goal.goalval
+      };
+    }));
+    
+    const goalsList = goalsWithStatus.map(goal => 
+      `**${goal.slug}** (${goal.urgency_horizon})\n` +
+      `  ${goal.title}\n` +
+      `  Safe days: ${goal.safe_days} | Due: ${goal.due_by}\n` +
+      `  Rate: ${goal.rate} | Current: ${goal.current_value} → ${goal.target_value}`
+    ).join('\n\n');
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Found ${goalsWithStatus.length} goals (sorted by urgency):\n\n${goalsList}`,
+        },
+      ],
+    };
+  } catch (error) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Error: ${error.message || error.name || 'Unknown error occurred while fetching goals'}`,
+        },
+      ],
+    };
+  }
+}
 
 /* underlying calls for record_progress and record_progress_for_yesterday */
 async function createAndCheckDatapoint( goal_slug, value, comment = "", timestamp = NOW() ) {
@@ -299,10 +387,10 @@ function getUrgencyHorizon( losedate = NOW() ) {
         const secondsLeft = losedate - NOW();
         const daysLeft = Math.floor( secondsLeft / SECONDS_PER_DAY );
         if ( daysLeft <= 8 ) {
-          return "this week"
+          return "committed"
         }
-        else if ( daysLeft <= 16 ) {
-          return "next week"
+        else if ( daysLeft <= 15 ) {
+          return "calendial"
         }
         else {
           return "safe"
