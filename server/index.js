@@ -164,12 +164,10 @@ async function listGoals() {
     const user = await bm.getUserSkinny();
     const goals = user.goals || [];
     
-    // Sort by urgencykey (canonical sort from API)
-    goals.sort((a, b) => a.urgencykey - b.urgencykey);
-    
     const goalsWithStatus = await Promise.all(goals.map(async (goal) => {
       let safeDays = goal.safebuf;
       let loseDate = goal.losedate;
+      let urgencykey = goal.urgencykey;
       
       // If latest datapoint was added today, autoratchet hasn't run yet
       // so we need to manually adjust safe days and losedate
@@ -184,6 +182,13 @@ async function listGoals() {
             const adjusted = adjustForAutoratchet(fullGoal);
             safeDays = adjusted.safeDays;
             loseDate = adjusted.loseDate;
+            
+            // Update urgencykey with adjusted deadline
+            if (loseDate !== goal.losedate) {
+              const keyParts = goal.urgencykey.split(';');
+              keyParts[2] = 'DL' + loseDate.toString().padStart(10, '0');
+              urgencykey = keyParts.join(';');
+            }
           } catch (error) {
             // If fetch fails, use unadjusted values
             console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
@@ -202,9 +207,13 @@ async function listGoals() {
         due_by: dueBy,
         rate: `${goal.rate} ${goal.runits} per ${goal.gunits}`,
         current_value: goal.curval,
-        target_value: goal.goalval
+        target_value: goal.goalval,
+        urgencykey: urgencykey
       };
     }));
+    
+    // Sort by urgencykey after potential adjustments
+    goalsWithStatus.sort((a, b) => a.urgencykey.localeCompare(b.urgencykey));
     
     const goalsList = goalsWithStatus.map(goal => 
       `**${goal.slug}** (${goal.urgency_horizon})\n` +
