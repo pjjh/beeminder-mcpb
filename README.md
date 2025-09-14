@@ -17,26 +17,31 @@ Beeminder is a tool for overcoming akrasia (acting against your better judgment)
 
 Although this is a wrapper around the Beeminder API, it's reimagined for MCP use by focussing on user actions and tools.[^1] These are documented in .concept files in the doc folder, and roughly follow the ideas of Daniel Jackson.[^2]
 
+These tools improve on Beeminder's default processing by
+* reflecting the impact of a goal's autoratchet setting on urgency
+* grouping goals according to the user's experienced day, i.e. what needs to be tackled before bed
+
 ## Tools
 
 ### Add Datapoint
 - Record Progress - adds a datapoint for today, and reports on resulting goal status
 - Record Progress for Yesterday - adds a datapoint for yesterday, and reports on resulting goal status
 
+### Dashboard
+- List Goals - view all of your goals, in the canonical sort order (adjusted for any impending autoratchet)
+- Beemergencies - view your eep! goals, whether they're due before bed or not until your tomorrow
+- Calendial - list those goals that are due in the week following the akrasia horizon
+
 ## Planned Tools
 
-### Dashboard
-- List Goals
-- Beemergencies
-- Calendial
+### Review Goal
+- Review Progress
+- Analyse Goal
 
 ### Adjust Commitment
 - Change Slope
 - Schedule Break
 
-### Review Goal
-- Review Progress
-- Analyse Goal
 
 ## Security
 
