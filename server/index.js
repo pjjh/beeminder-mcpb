@@ -200,7 +200,7 @@ async function getGoalDetails(bm, goal, needsFullDataFilter) {
   // Fetch full goal data if we need it for autoratchet
   if (needsAutoratchetCheck) {
     try {
-      goalData = await bm.getGoal(goal.slug);
+      goalData = await getEmaciatedGoal(bm, goal.slug);
       alreadyHaveFullData = true;
       
       // Apply autoratchet adjustment
@@ -235,7 +235,7 @@ async function getGoalDetails(bm, goal, needsFullDataFilter) {
   // Fetch full goal data if needed and not already fetched
   if (shouldGetFullData && !alreadyHaveFullData) {
     try {
-      goalData = await bm.getGoal(goal.slug);
+      goalData = await getEmaciatedGoal(bm, goal.slug);
       alreadyHaveFullData = true;
     } catch (error) {
       console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
@@ -322,7 +322,7 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
       let goalStatus = undefined;
       while (queued) {
         await setTimeout(2000);
-        goalStatus = await bm.callApi(`/users/me/goals/${goal_slug}.json`, { emaciated: true }, 'GET');
+        goalStatus = await getEmaciatedGoal(bm, goal_slug);
         queued = goalStatus.queued;
       }
       console.error("BMNDR: No longer queued");
@@ -366,6 +366,11 @@ async function createAndCheckDatapoint( goal_slug, value, comment = "", timestam
 // UTILITIES
 
 const SECONDS_PER_DAY = 24*60*60;
+
+// Fetch full goal data with emaciated flag (strips road/roadall for efficiency)
+async function getEmaciatedGoal(bm, goalSlug) {
+  return await bm.callApi(`/users/me/goals/${goalSlug}.json`, { emaciated: true }, 'GET');
+}
 
 // Format Unix timestamp as user-friendly local time
 function formatDueDate(losedate) {
