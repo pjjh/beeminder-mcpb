@@ -125,7 +125,7 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
       },
       {
         name: "list_goals",
-        description: "Get a complete list of the user's Beeminder goals with current status for effort prioritization",
+        description: "Get a complete list of the user's Beeminder goals with current status for effort prioritization. Returns JSON with goals sorted by Beeminder's canonical urgency order.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -134,7 +134,16 @@ server.setRequestHandler(ListToolsRequestSchema, async (request) => {
       },
       {
         name: "beemergencies",
-        description: "Get goals that need attention before bed today or tomorrow",
+        description: "Get goals that need attention before bed today or tomorrow. Returns JSON with goals sorted by Beeminder's canonical urgency order.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: "calendial",
+        description: "Returns goals in the 'calendial window' - typically 8-15 days out, beyond the akrasia horizon but close enough to warrant calendar planning. These goals benefit from advance scheduling and aren't urgent fires to fight, but should be considered when planning your week ahead.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -160,7 +169,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return await listGoals();
   }
   else if (request.params.name === "beemergencies") {
-    return await beemergencies();
+    return await listGoals((goal) => 
+      goal.safe_days === 0
+    );
+  }
+  else if (request.params.name === "calendial") {
+    return await listGoals((goal) => 
+      goal.urgency_horizon === 'calendial'
+    );
   }
 
   throw new Error(`Unknown tool: ${request.params.name}`);
@@ -169,71 +185,104 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // TOOL IMPLEMENTATIONS
 
-async function listGoals() {
+async function getGoalDetails(bm, goal, needsFullDataFilter) {
+  let safeDays = goal.safebuf;
+  let loseDate = goal.losedate;
+  let urgencykey = goal.urgencykey;
+  let goalData = goal; // start with skinny data
+  let alreadyHaveFullData = false;
+  
+  // Check if we need autoratchet adjustment
+  const needsAutoratchetCheck = goal.last_datapoint && 
+    goal.last_datapoint.timestamp &&
+    (NOW() - goal.last_datapoint.timestamp) < SECONDS_PER_DAY;
+    
+  // Fetch full goal data if we need it for autoratchet
+  if (needsAutoratchetCheck) {
+    try {
+      goalData = await bm.getGoal(goal.slug);
+      alreadyHaveFullData = true;
+      
+      // Apply autoratchet adjustment
+      const adjusted = adjustForAutoratchet(goalData);
+      safeDays = adjusted.safeDays;
+      loseDate = adjusted.loseDate;
+      urgencykey = adjusted.urgencykey;
+    } catch (error) {
+      console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
+    }
+  }
+  
+  // Build processed goal for testing
+  const processedGoal = {
+    urgency_horizon: getUrgencyHorizon(loseDate),
+    due_by: formatDueDate(loseDate),
+    safe_days: safeDays,
+    safebuf: safeDays,
+    rate_description: `${goal.rate} ${goal.runits} per ${goal.gunits}`,
+    current_value: goal.curval,
+    target_value: goal.goalval,
+    urgencykey: urgencykey,
+    // Include original fields for filter testing
+    slug: goal.slug,
+    title: goal.title,
+    description: goal.description,
+  };
+  
+  // Check if caller wants full data based on processed goal
+  const shouldGetFullData = needsFullDataFilter(processedGoal);
+  
+  // Fetch full goal data if needed and not already fetched
+  if (shouldGetFullData && !alreadyHaveFullData) {
+    try {
+      goalData = await bm.getGoal(goal.slug);
+      alreadyHaveFullData = true;
+    } catch (error) {
+      console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
+    }
+  }
+  
+  // Add full goal fields if we have them
+  if (alreadyHaveFullData) {
+    processedGoal.fineprint = goalData.fineprint || "";
+  }
+  
+  return processedGoal;
+}
+
+async function listGoals(urgencyFilter = null) {
   try {
     const bm = await bmndr();
     
     const user = await bm.getUserSkinny();
     const goals = user.goals || [];
     
+    // Determine if we need full data based on the filter
+    const needsFullDataFilter = urgencyFilter ? 
+      (goal) => urgencyFilter(goal) : 
+      (goal) => false;
+    
+    // Use getGoalDetails with appropriate full data filter
     const goalsWithStatus = await Promise.all(goals.map(async (goal) => {
-      let safeDays = goal.safebuf;
-      let loseDate = goal.losedate;
-      let urgencykey = goal.urgencykey;
-      
-      // If latest datapoint was added today, autoratchet hasn't run yet
-      // so we need to manually adjust safe days and losedate
-      if (goal.last_datapoint && goal.last_datapoint.timestamp) {
-        const lastDatapointAge = NOW() - goal.last_datapoint.timestamp;
-        const isFromToday = lastDatapointAge < SECONDS_PER_DAY;
-        
-        if (isFromToday) {
-          try {
-            // Fetch full goal data to get autoratchet value
-            const fullGoal = await bm.getGoal(goal.slug);
-            const adjusted = adjustForAutoratchet(fullGoal);
-            safeDays = adjusted.safeDays;
-            loseDate = adjusted.loseDate;
-            
-            // Update urgencykey with adjusted deadline
-            if (loseDate !== goal.losedate) {
-              const keyParts = goal.urgencykey.split(';');
-              keyParts[2] = 'DL' + loseDate.toString().padStart(10, '0');
-              urgencykey = keyParts.join(';');
-            }
-          } catch (error) {
-            // If fetch fails, use unadjusted values
-            console.error(`BMNDR: Failed to fetch full goal data for ${goal.slug}:`, error.message);
-          }
-        }
-      }
-      
-      const urgencyHorizon = getUrgencyHorizon(loseDate);
-      const dueBy = formatDueDate(loseDate);
-      
-      return {
-        slug: goal.slug,
-        title: goal.title,
-        urgency_horizon: urgencyHorizon,
-        safe_days: safeDays,
-        due_by: dueBy,
-        rate: `${goal.rate} ${goal.runits} per ${goal.gunits}`,
-        current_value: goal.curval,
-        target_value: goal.goalval,
-        urgencykey: urgencykey
-      };
+      return await getGoalDetails(bm, goal, needsFullDataFilter);
     }));
     
+    // Apply urgency filter if provided
+    let filteredGoals = goalsWithStatus;
+    if (urgencyFilter) {
+      filteredGoals = goalsWithStatus.filter(urgencyFilter);
+    }
+    
     // Sort by urgencykey after potential adjustments
-    goalsWithStatus.sort((a, b) => a.urgencykey.localeCompare(b.urgencykey));
+    filteredGoals.sort((a, b) => a.urgencykey.localeCompare(b.urgencykey));
     
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify({
-            count: goalsWithStatus.length,
-            goals: goalsWithStatus
+            count: filteredGoals.length,
+            goals: filteredGoals
           }, null, 2),
         },
       ],
@@ -250,38 +299,6 @@ async function listGoals() {
   }
 }
 
-async function beemergencies() {
-  try {
-    // Call listGoals and filter for urgent goals
-    const listResult = await listGoals();
-    const allGoalsData = JSON.parse(listResult.content[0].text);
-    
-    const urgentGoals = allGoalsData.goals.filter(goal => 
-      goal.urgency_horizon === 'today' || goal.urgency_horizon === 'tomorrow'
-    );
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            count: urgentGoals.length,
-            goals: urgentGoals
-          }, null, 2),
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error: ${error.message || error.name || 'Unknown error occurred while fetching beemergencies'}`,
-        },
-      ],
-    };
-  }
-}
 
 /* underlying calls for record_progress and record_progress_for_yesterday */
 async function createAndCheckDatapoint( goal_slug, value, comment = "", timestamp = NOW() ) {
@@ -410,25 +427,33 @@ function getDayStart() {
 }
 
 
-// return { safeDays, loseDate, dueBy }, adjusted for autoratchet if applicable
-function adjustForAutoratchet( goalStatus ) {
+// return { safeDays, loseDate, dueBy, urgencykey }, adjusted for autoratchet if applicable
+function adjustForAutoratchet( goal ) {
 
-      let safeDays = goalStatus.safebuf; 
-      let loseDate = goalStatus.losedate;
+      let safeDays = goal.safebuf; 
+      let loseDate = goal.losedate;
 
       // autoratchet kicks in at day end so won't yet be reflected in safebuf
-      if (typeof goalStatus.autoratchet === 'number' && goalStatus.autoratchet >= 0) {
-        const autoratchet = goalStatus.autoratchet + 1; // +1 to include today
+      if (typeof goal.autoratchet === 'number' && goal.autoratchet >= 0) {
+        const autoratchet = goal.autoratchet + 1; // +1 to include today
         if (safeDays > autoratchet) {
           const daysToSubtract = safeDays - (autoratchet); 
-          loseDate = goalStatus.losedate - (daysToSubtract * SECONDS_PER_DAY);
+          loseDate = goal.losedate - (daysToSubtract * SECONDS_PER_DAY);
         }
         safeDays = Math.min(safeDays, autoratchet);
       }
 
       const dueBy = formatDueDate(loseDate);
 
-  return { safeDays, loseDate, dueBy };
+      // Update urgencykey if loseDate changed
+      let urgencykey = goal.urgencykey;
+      if (loseDate !== goal.losedate) {
+        const keyParts = goal.urgencykey.split(';');
+        keyParts[2] = 'DL' + loseDate.toString().padStart(10, '0');
+        urgencykey = keyParts.join(';');
+      }
+
+  return { safeDays, loseDate, dueBy, urgencykey };
 }
 
 
@@ -448,7 +473,7 @@ function getUrgencyHorizon( losedate = NOW() ) {
         // within akh or calendial or safesafesafe
         const secondsLeft = losedate - NOW();
         const daysLeft = Math.floor( secondsLeft / SECONDS_PER_DAY );
-        if ( daysLeft <= 8 ) {
+        if ( daysLeft <= 7 ) {
           return "committed"
         }
         else if ( daysLeft <= 15 ) {

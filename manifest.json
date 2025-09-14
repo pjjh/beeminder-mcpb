@@ -40,11 +40,15 @@
     },
     {
       "name": "list_goals",
-      "description": "Get a complete list of the user's Beeminder goals with current status for effort prioritization"
+      "description": "Get a complete list of the user's Beeminder goals with current status for effort prioritization. Returns JSON with goals sorted by Beeminder's canonical urgency order."
     },
     {
       "name": "beemergencies",
-      "description": "Get goals that need attention before bed today or tomorrow"
+      "description": "Get goals that need attention before bed today or tomorrow. Returns JSON with goals sorted by Beeminder's canonical urgency order."
+    },
+    {
+      "name": "calendial",
+      "description": "Returns goals in the 'calendial window' - typically 8-15 days out, beyond the akrasia horizon but close enough to warrant calendar planning. These goals benefit from advance scheduling and aren't urgent fires to fight, but should be considered when planning your week ahead."
     }
   ],
   "keywords": [
