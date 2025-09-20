@@ -169,9 +169,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return await listGoals();
   }
   else if (request.params.name === "beemergencies") {
-    return await listGoals((goal) => 
-      goal.safe_days === 0
-    );
+    return await listGoals((goal) => {
+      // Include goals due in the next 24h (safe_days === 0)
+      if (goal.safe_days === 0) return true;
+
+      // Include goals with pessimistic datapoints (PPR1 in urgencykey)
+      if (goal.urgencykey) {
+        const keyParts = goal.urgencykey.split(';');
+        if (keyParts.length >= 2 && keyParts[1] === 'PPR1') return true;
+      }
+
+      return false;
+    });
   }
   else if (request.params.name === "calendial") {
     return await listGoals((goal) => 
